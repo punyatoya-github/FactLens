@@ -1,7 +1,24 @@
+# Python
 __pycache__/
-*.pyc
-.env
-chroma_db/
+*.py[cod]
+.venv/
 venv/
+*.egg-info/
+dist/
+build/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and local config
+.env
+
+# FactLens runtime data (parsed-document cache, vector store)
+.factlens/
 app.log
+*.log
+
+# OS
 .DS_Store

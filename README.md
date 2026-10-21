@@ -1,192 +1,145 @@
-# **DocChat**
+# FactLens
 
-## **📄 Overview**
+An advanced RAG-based document analysis assistant focused on explainable, verifiable answers.
 
-DocChat is a multi-agent Retrieval-Augmented Generation (RAG) system that extracts precise, verifiable answers from long, complex documents (PDF, DOCX, TXT, MD). It uses document-aware parsing (Docling), a hybrid retriever (BM25 \+ vector search), and a LangGraph multi-agent workflow (relevance check → research → verification → self-correct) to produce source-backed, hallucination-resistant answers optimized for tables, figures, scanned pages, and dense text.
+FactLens answers questions about long, complex documents (PDF, DOCX, TXT, MD) and checks every
+answer against the passages it came from before showing it to you. If your documents don't
+contain the answer, it says so instead of guessing.
 
----
+> FactLens is the renamed and rebuilt successor of **DocChat**. See
+> [docs/migrating-from-docchat.md](docs/migrating-from-docchat.md) for what changed.
 
-## **✨ Features**
+## How it works
 
-* **Hybrid retrieval**: BM25 lexical search combined with Chroma vector search for robust passage selection  
-* **Accurate parsing**: Docling converts files to structured Markdown and extracts tables; supports OCR for scanned PDFs  
-* **Multi-agent workflow**:  
-  * **Relevance Checker** to detect in-scope vs out-of-scope queries  
-  * **Research Agent** to synthesize draft answers from retrieved context  
-  * **Verification Agent** to validate answers and produce a structured verification report  
-  * **Self-correction loop** to re-run research when unsupported claims or contradictions are detected  
-* **Persistent vector store**: ChromaDB for fast similarity search and session reuse  
-* **Web UI**: Gradio interface for uploading docs, entering questions, and viewing verification reports  
-* **Examples**: Preloaded documents and sample queries for quick demos
+```mermaid
+flowchart LR
+    Q[Question] --> R[Hybrid retrieval<br/>BM25 + vector search]
+    R --> S{Scope classifier}
+    S -- out of scope --> X[Decline to answer]
+    S -- answerable / partial --> A[Answer synthesizer]
+    A --> V[Claim verifier]
+    V -- supported --> OUT[Answer + verification report]
+    V -- unsupported or contradicted --> B{Revisions left?}
+    B -- yes, with feedback --> A
+    B -- no --> OUT
+```
 
----
+1. **Ingestion**: [Docling](https://github.com/docling-project/docling) turns PDFs and DOCX files
+   into structured Markdown (tables included, OCR for scans). The Markdown is split by heading and
+   then into size-bounded chunks. Parsed chunks are cached on disk by file hash.
+2. **Hybrid retrieval**: BM25 keyword search and OpenAI-embedding vector search (Chroma) are
+   merged with weighted reciprocal-rank fusion.
+3. **Scope classifier**: decides whether the retrieved passages can answer the question at all.
+4. **Answer synthesizer**: drafts an answer using only the retrieved context.
+5. **Claim verifier**: checks the draft for unsupported claims, contradictions and relevance. A
+   failed check sends the draft back for revision with the verifier's feedback, up to
+   `FACTLENS_MAX_REVISIONS` times.
 
-## **🧰 Tech Stack**
+## Quick start
 
-* **Language**: Python 3.11  
-* **Document parsing**: Docling (Markdown extraction, table handling, OCR)  
-* **Workflow orchestration**: LangGraph  
-* **RAG glue**: LangChain-style patterns; BM25 retriever; ChromaDB vector store  
-* **Embeddings & models**: IBM watsonX AI (embeddings \+ inference for research and verification agents)  
-* **Frontend**: Gradio
+Requires Python 3.11 or newer and an [OpenAI API key](https://platform.openai.com/api-keys).
 
----
+```bash
+git clone https://github.com/punyatoya-github/FactLens.git
+cd FactLens
 
-## **🚀 Installation**
+# Using uv (recommended; installs exactly the versions in uv.lock)
+uv sync --extra dev
+cp .env.example .env        # then put your OPENAI_API_KEY in .env
+uv run factlens
+```
 
-1. Clone and checkout the release branch:
+Or with pip:
 
-   * git clone \--no-checkout https://github.com/punyatoya-github/DocChat.git docchat  
-   * cd docchat  
-   * git checkout 2-final  
-2. Create and activate a Python 3.11 virtual environment:
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+factlens
+```
 
-   * python3.11 \-m venv venv  
-   * source venv/bin/activate  
-3. Install dependencies:
+Open <http://127.0.0.1:7860>, upload one or more documents (or load a bundled example), ask a
+question and press **Submit**. The first PDF takes a while because Docling loads its models;
+repeat questions about the same files reuse the cached parse and stored embeddings.
 
-   * pip install \-r requirements.txt
+> **Privacy:** document text is sent to OpenAI for embedding and answering. The app listens on
+> localhost only and does not create a public share link unless you set `FACTLENS_SHARE=true`.
 
-Notes:
+## First-run speed
 
-* Accepted file formats: **.pdf**, **.docx**, **.txt**, **.md**  
-* Do not commit credentials; keep them in environment variables or a local .env (provide .env.example if needed)
+The first time you upload a long PDF, FactLens has to convert it with Docling's layout and table
+models, which can take several minutes on a CPU. The UI shows a status line while this happens, the
+console logs how long each file took, and the result is cached in `.factlens/cache`, so asking
+more questions about the same files is fast.
 
----
+Docling's OCR is the most expensive step on image-heavy reports, so by default FactLens parses
+PDFs **without** OCR and retries with OCR only when a PDF yields almost no text (a scan). Set
+`FACTLENS_OCR_MODE=never` to skip that fallback, or `always` to OCR everything. Table recognition
+stays on in every mode. Messages like `RapidOCR returned empty result!` just mean OCR looked at
+an image with no text in it (a chart, photo or logo).
 
-## **▶️ Usage**
+## Configuration
 
-1. Start the Gradio app:
+Settings come from environment variables or a `.env` file (see [.env.example](.env.example)).
 
-   * python app.py  
-2. Open the application. From the UI you can:
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | (required) | OpenAI credentials |
+| `FACTLENS_CHAT_MODEL` | `gpt-6-luna` | Chat model used by all agents |
+| `FACTLENS_SCOPE_MODEL`, `_SYNTHESIS_MODEL`, `_VERIFICATION_MODEL` | unset | Per-agent overrides |
+| `FACTLENS_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `FACTLENS_CHAT_TEMPERATURE` | unset | Leave unset unless your model accepts it |
+| `FACTLENS_OCR_MODE` | `auto` | `auto`, `never` or `always`; see [First-run speed](#first-run-speed) |
+| `FACTLENS_MAX_REVISIONS` | `2` | Revisions allowed after a failed verification |
+| `FACTLENS_VECTOR_SEARCH_K` / `_BM25_SEARCH_K` | `10` / `4` | Results per retriever |
+| `FACTLENS_HYBRID_WEIGHTS` | `[0.4,0.6]` | Fusion weights `[lexical, vector]` |
+| `FACTLENS_CHUNK_MAX_CHARS` / `_CHUNK_OVERLAP_CHARS` | `2000` / `200` | Chunk size |
+| `FACTLENS_DATA_DIR` | `.factlens` | Parse cache and vector store (safe to delete) |
+| `FACTLENS_SERVER_HOST` / `_SERVER_PORT` / `_SHARE` | `127.0.0.1` / `7860` / `false` | Web server |
 
-   * Upload one or more documents  
-   * Enter natural-language questions about uploaded files  
-   * Load provided example datasets and queries  
-   * View the generated answer and the verification report  
-3. Key runtime behavior:
+OpenAI retires models on a published schedule. Check the
+[deprecations page](https://developers.openai.com/api/docs/deprecations) and change
+`FACTLENS_CHAT_MODEL` if your default is deprecated.
 
-   * Docling parses uploads into structured Markdown and chunks them for retrieval  
-   * Hybrid retriever (BM25 \+ Chroma vector search) is built and cached per session using SHA-256 file hashing  
-   * LangGraph orchestrates relevance → research → verify → self-correct  
-   * Final answer and verification report are displayed in the UI
+## Project layout
 
-Tips:
+```
+src/factlens/
+├── core/         settings, logging, constants, errors
+├── ingestion/    parsing, chunking, hashing, upload handling
+├── storage/      JSON chunk cache
+├── retrieval/    BM25, vector store, weighted rank fusion
+├── llm/          OpenAI chat and embedding clients
+├── agents/       scope_classifier, answer_synthesizer, claim_verifier
+├── pipeline/     LangGraph graph and runner
+├── schemas/      typed verdicts and results
+└── ui/           Gradio app, rendering, bundled examples
+tests/            offline unit and integration tests (no network)
+scripts/          developer utilities (e.g. inspect_parsing.py)
+examples/         sample documents
+```
 
-* If you edit uploaded documents, the system will detect changes and rebuild the retriever automatically  
-* Stop the server with Ctrl+C
+## Development
 
----
+```bash
+uv run pytest            # tests (no API key or network needed)
+uv run ruff check .      # lint
+uv run ruff format .     # format
+uv run mypy              # type check
+uv run python scripts/inspect_parsing.py examples/deepseek-r1-technical-report.pdf
+```
 
-## **✅ Testing the application**
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions.
 
-* Unit and integration test targets:  
-  * DocumentProcessor: structured Markdown & table extraction; OCR for scanned PDFs  
-  * RetrieverBuilder: BM25 and vector top-k correctness and weighting behavior  
-  * LangGraph workflow: CAN\_ANSWER / PARTIAL / NO\_MATCH routing and self-correction loops  
-  * VerificationAgent: structured verification output parsing (Supported, Unsupported Claims, Contradictions, Relevant)  
-* Manual test checklist:  
-  * Load an example document and submit an in-scope question; confirm Supported: YES  
-  * Submit an out-of-scope question; confirm NO\_MATCH and no hallucinated answer  
-  * Alter a source passage, re-run the query, and observe unsupported claim detection or self-correction  
-* Performance considerations:  
-  * Measure BM25 vs vector latencies and tune HYBRID\_RETRIEVER\_WEIGHTS  
-  * Monitor model inference times; large models may require timeouts, retries, or smaller alternatives
+## Roadmap
 
----
+Done: rebrand, package restructure, OpenAI migration, tested pipeline with bounded self-correction.
 
-## **🗂️ Folder structure**
+Next (explainability): inline numbered citations that open the source passage with page number,
+claim-by-claim verification display, per-answer confidence and risk indicator, an agent trace
+timeline, and a redesigned Gradio interface. Not planned for now: a separate backend API,
+streaming responses, conversation history.
 
-Use this tree-style layout when organizing the repository:
+## License
 
-docchat/  
- │── app.py \# Main application script (Gradio \+ pipeline orchestration)  
- │── requirements.txt \# Project dependencies  
- │── README.md \# Project documentation  
- │── CONTRIBUTING.md \# Contribution guidelines  
- │── .gitignore \# Ignored files and folders  
- │── venv/ \# Virtual environment (ignored in .gitignore)  
- │  
- │── agents/  
- │ ├── research\_agent.py \# Research Agent implementation  
- │ ├── verification\_agent.py \# Verification Agent implementation  
- │ └── relevance\_checker.py \# Relevance checking logic  
- │  
- │── document\_processor/  
- │ ├── file\_handler.py \# Docling integration and file parsing  
- │ └── processor.py \# DocumentProcessor wrapper and chunking logic  
- │  
- │── retriever/  
- │ ├── builder.py \# Hybrid retriever builder (BM25 \+ Chroma)  
- │ └── bm25\_retriever.py \# BM25 retriever helper  
- │  
- │── workflow/  
- │ ├── workflow.py \# LangGraph StateGraph wiring  
- │ └── agent\_workflow.py \# AgentWorkflow wrapper and entry points  
- │  
- │── config/  
- │ ├── settings.py \# App settings and constants  
- │ └── logging.conf \# Logging configuration  
- │  
- │── document\_cache/ \# Cached parsed chunks and pickles (gitignored)  
- │  
- │── utils/  
- │ ├── hashing.py \# SHA-256 file hashing utilities  
- │ └── helpers.py \# Misc helper functions  
- │  
- │── examples/  
- │ ├── google-2024-environmental-report.pdf  
- │ └── DeepSeek-R1-Technical-Report.pdf  
- │  
- │── screenshots/  
- │ ├── ui-upload.png  
- │ ├── answer-verification.png  
- │ └── multi-document.png
-
-Notes:
-
-* Add large or transient files to .gitignore (document\_cache, venv)  
-* Provide a .env.example for required environment variables (e.g., watsonx credentials) and do not commit secrets
-
----
-
-## **🖼️ Screenshots**
-
-
-* UI landing page with upload controls and examples dropdown (screenshots/ui-upload.png)
-  
-  ![Landing Page](screenshots/ui-upload.png)
-
-
-  
-* Example query and generated answer with verification (screenshots/answer-verification.png)
-  
-  ![Answer Verification](screenshots/answer-verification.png)
-
-
-  
-* Answer showing unrelated questions from user (screenshots/unrelated-question.png)
-  
-  ![Unrelated Question](screenshots/unrelated-question.png)
-
-
-  
-* Multi-document retrieval demo showing correct source selection (screenshots/multi-document.png)
-  
-  ![Multi Document](screenshots/multi-document.png)
-
----
-
-## **👥 Authors**
-
-Punyatoya Mohanty
-
----
-
-## **📜 License**
-
-This project is licensed under the MIT License.
-
----
-
+MIT. See [LICENSE](LICENSE). Author: Punyatoya Mohanty.
