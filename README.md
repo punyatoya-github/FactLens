@@ -6,9 +6,6 @@ FactLens answers questions about long, complex documents (PDF, DOCX, TXT, MD) an
 answer against the passages it came from before showing it to you. If your documents don't
 contain the answer, it says so instead of guessing.
 
-> FactLens is the renamed and rebuilt successor of **DocChat**. See
-> [docs/migrating-from-docchat.md](docs/migrating-from-docchat.md) for what changed.
-
 ## How it works
 
 ```mermaid
@@ -59,7 +56,7 @@ factlens
 ```
 
 Open <http://127.0.0.1:7860>, upload one or more documents (or load a bundled example), ask a
-question and press **Submit**. The first PDF takes a while because Docling loads its models;
+question and press **Submit**. The first PDF takes a while because  loads its models;
 repeat questions about the same files reuse the cached parse and stored embeddings.
 
 > **Privacy:** document text is sent to OpenAI for embedding and answering. The app listens on
@@ -67,12 +64,12 @@ repeat questions about the same files reuse the cached parse and stored embeddin
 
 ## First-run speed
 
-The first time you upload a long PDF, FactLens has to convert it with Docling's layout and table
+The first time you upload a long PDF, FactLens has to convert it with 's layout and table
 models, which can take several minutes on a CPU. The UI shows a status line while this happens, the
 console logs how long each file took, and the result is cached in `.factlens/cache`, so asking
 more questions about the same files is fast.
 
-Docling's OCR is the most expensive step on image-heavy reports, so by default FactLens parses
+'s OCR is the most expensive step on image-heavy reports, so by default FactLens parses
 PDFs **without** OCR and retries with OCR only when a PDF yields almost no text (a scan). Set
 `FACTLENS_OCR_MODE=never` to skip that fallback, or `always` to OCR everything. Table recognition
 stays on in every mode. Messages like `RapidOCR returned empty result!` just mean OCR looked at
