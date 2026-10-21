@@ -6,6 +6,7 @@ FactLens answers questions about long, complex documents (PDF, DOCX, TXT, MD) an
 answer against the passages it came from before showing it to you. If your documents don't
 contain the answer, it says so instead of guessing.
 
+![Document Analysis](Doc_analysis.png)
 ## How it works
 
 ```mermaid
