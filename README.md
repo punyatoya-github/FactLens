@@ -131,15 +131,6 @@ uv run python scripts/inspect_parsing.py examples/deepseek-r1-technical-report.p
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions.
 
-## Roadmap
-
-Done: rebrand, package restructure, OpenAI migration, tested pipeline with bounded self-correction.
-
-Next (explainability): inline numbered citations that open the source passage with page number,
-claim-by-claim verification display, per-answer confidence and risk indicator, an agent trace
-timeline, and a redesigned Gradio interface. Not planned for now: a separate backend API,
-streaming responses, conversation history.
-
 ## License
 
 MIT. See [LICENSE](LICENSE). Author: Punyatoya Mohanty.
